@@ -31,7 +31,6 @@ jobs:
           test -s work/LAC-v61.xapk
           file work/LAC-v61.xapk
           unzip -t work/LAC-v61.xapk
-          cp work/LAC-v61.xapk artifact/LAC-v61.xapk
 
       - name: Extract package and inspect contents
         shell: bash
@@ -67,5 +66,5 @@ jobs:
           name: LAC-v61-XAPK-and-extracted-files
           path: artifact/
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
