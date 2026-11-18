@@ -3,7 +3,7 @@
 import re
 import sys
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_ARM64
+from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
 
 if len(sys.argv) != 4:
     raise SystemExit("usage: disassemble_lac_methods.py libil2cpp.so dump.cs output.txt")
@@ -44,7 +44,7 @@ next_rva = {}
 for rva in sorted_rvas:
     next_rva[rva] = next((x for x in sorted_rvas if x > rva), None)
 
-md = Cs(CS_ARCH_ARM64)
+md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
 md.detail = True
 with open(ELF_PATH, "rb") as f, open(OUT_PATH, "w", encoding="utf-8") as out:
     elf = ELFFile(f)
