@@ -18,11 +18,14 @@ Only a sender whose server-side ServerUser record has state host (1) or admin (2
 ## Implementation
 
 - Hooks server-side PlayerKillFeed.UserCode_CmdSendChat at RVA 0x1080A54.
-- Checks the LAC 1.9.7 method prologue before installing.
+- Verifies the exact `libil2cpp.so` SHA-256 (`29ca3610d9e89c2eba9f0abab11cc2adc96b00470a30136f55b3c39e10465f06`), executable segment bounds, and the `UserCode_CmdSendChat` prologue before installing.
 - Resolves the target through PlayersManager.GetPlayer.
 - Calls PlayerControl.InventoryAdd on the target.
 - Reads the resulting authoritative inventory and invokes PlayerControl.RpcUpdateInventory to synchronize clients.
 - Reports success/failure through PlayerKillFeed.RpcGetChat.
+- Registers both JNI methods explicitly with `RegisterNatives` from `JNI_OnLoad`.
+- Guards the Java plugin lifecycle so `nativeStop` is never called before the library and start request are established.
+- Prevents concurrent hook-install workers and logs installation failures.
 - Passes all non-matching chat messages to the original method unchanged.
 
 ## Build and install
@@ -31,4 +34,4 @@ GitHub Actions builds classes.dex, the ARM64 native library, and admin-give.lacs
 
 ## Verification boundary
 
-CI validates package structure, SHA-256 manifest entries, DEX magic, and the ARM64 ELF header. It cannot prove live server authorization or client synchronization without a real LAC 1.9.7 session. A successful CI build is not a live-game test.
+CI validates package structure, SHA-256 manifest entries, DEX magic, ARM64 ELF type, and the presence of all JNI entry symbols plus the game-library hash guard. The native code refuses to hook a different `libil2cpp.so` build. CI still cannot prove live server authorization or client synchronization without a real LAC 1.9.7 host session. A successful CI build is not a live-game test.
