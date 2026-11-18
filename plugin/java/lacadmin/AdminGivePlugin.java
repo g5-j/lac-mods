@@ -2,17 +2,28 @@ package lacadmin;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import android.util.Log;
 
 import local.lacmods.api.LacPlugin;
 import local.lacmods.api.PluginContext;
 
 /** LAC Online 1.9.7 server-side inventory grant command. */
 public final class AdminGivePlugin implements LacPlugin {
+    private static final String TAG = "LACAdminGive";
+
+    static {
+        Log.i(TAG, "ENTRY_CLASS_INITIALIZED");
+    }
+
+    public AdminGivePlugin() {
+        Log.i(TAG, "ENTRY_CONSTRUCTOR_OK");
+    }
     private boolean libraryLoaded;
     private boolean startRequested;
 
     @Override
     public synchronized void onStart(PluginContext context) {
+        Log.i(TAG, "ENTRY_ONSTART_ENTERED");
         if (startRequested) {
             context.log("AdminGive: start already requested");
             return;
