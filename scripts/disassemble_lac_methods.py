@@ -24,17 +24,17 @@ with open(ELF_PATH, "rb") as f:
     with open(OUT_PATH, "w") as out:
         for name, rva in TARGETS.items():
             seg = next((s for s in loads if s["p_vaddr"] <= rva < s["p_vaddr"] + s["p_memsz"]), None)
-            out.write(f"\n===== {name} RVA=0x{rva:X} =====\n")
+            out.write(f"\\n===== {name} RVA=0x{rva:X} =====\\n")
             if not seg:
-                out.write("RVA not mapped by PT_LOAD segment\n")
+                out.write("RVA not mapped by PT_LOAD segment\\n")
                 continue
             delta = rva - seg["p_vaddr"]
-            raw = seg.data()[delta:delta + 0x300]
+            raw = seg.data()[delta:delta + 0x1800]
             count = 0
             for ins in md.disasm(raw, rva):
-                out.write(f"0x{ins.address:08X}: {ins.mnemonic:8} {ins.op_str}\n")
+                out.write(f"0x{ins.address:08X}: {ins.mnemonic:8} {ins.op_str}\\n")
                 count += 1
-                if count >= 120:
+                if count >= 1536:
                     break
             if not count:
-                out.write("No instructions decoded\n")
+                out.write("No instructions decoded\\n")
