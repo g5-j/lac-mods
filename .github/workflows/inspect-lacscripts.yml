@@ -1,8 +1,7 @@
 name: Inspect LACScripts packages
 on:
-  push:
-    paths:
-      - ".github/workflows/inspect-lacscripts.yml"
+  pull_request:
+    types: [opened, synchronize, reopened]
 permissions:
   contents: read
 jobs:
