@@ -6,11 +6,10 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(NOT ANDROID OR NOT ANDROID_ABI STREQUAL "arm64-v8a")
     message(FATAL_ERROR "This plugin is built only for Android arm64-v8a")
 endif()
-set(DOBBY_DEBUG OFF CACHE BOOL "" FORCE)
-set(DOBBY_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-set(DOBBY_BUILD_TEST OFF CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/Dobby ${CMAKE_CURRENT_BINARY_DIR}/dobby)
-add_library(lac_admin_give SHARED admin_give.cpp)
-target_include_directories(lac_admin_give PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/Dobby/include)
+add_library(lac_admin_give SHARED
+    admin_give.cpp
+    And64InlineHook.cpp
+)
+target_include_directories(lac_admin_give PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(lac_admin_give PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(lac_admin_give PRIVATE dobby_static log dl)
+target_link_libraries(lac_admin_give PRIVATE log dl)
