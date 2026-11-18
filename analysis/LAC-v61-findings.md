@@ -55,3 +55,20 @@ Inspect the ARM64 native code at the listed RVAs and the generated registration 
 - whether an authoritative server-side extension point exists.
 
 Do not ship a client-only implementation that simply invokes `InventoryAdd` or `CmdUpdateInventory` without verifying server authority.
+
+
+## Additional chat-command evidence
+
+The v61 IL2CPP string table contains these chat-command literals:
+- `/give `
+- `/inventory `
+- `/pay `
+- `/pm `
+- `/do`, `/dolow`, `/me`, `/melow`
+- `/CommandTutorial.txt`
+
+It also contains item/currency literals `cash`, `:cash`, `*cash`, `Cash`, and `Money`, plus an admin label and admin-code related text. This confirms the game already has a chat command parser and cash-related vocabulary. It does **not** by itself prove what arguments `/give` accepts or what permission checks it performs.
+
+## Disassembly pass
+
+The ARM64 library disassembly confirms that the listed method RVAs resolve to executable code. `InventoryAdd` calls string parsing helpers (`Split`, `Contains`, equality checks, and integer parsing), so inventory is stored in a serialized string rather than a simple numeric field. The exact delimiter/record schema and sync behavior still need to be traced before constructing inventory data.
