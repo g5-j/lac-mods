@@ -73,6 +73,18 @@ jobs:
           echo "Dump completed." > artifact/analysis-report.txt
           du -h artifact/* >> artifact/analysis-report.txt
 
+      - name: Disassemble relevant ARM64 methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet capstone pyelftools
+          python3 scripts/disassemble_lac_methods.py work/libil2cpp.so artifact/method-disassembly.txt
+          {
+            echo
+            echo "Relevant native method disassembly:"
+            cat artifact/method-disassembly.txt
+          } >> artifact/analysis-report.txt
+
       - name: Upload compact analysis
         uses: actions/upload-artifact@v4
         with:
