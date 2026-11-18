@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dotnet work/dumper/Il2CppDumper.dll work/libil2cpp.so work/global-metadata.dat work/output
+          script -q -c 'dotnet work/dumper/Il2CppDumper.dll work/libil2cpp.so work/global-metadata.dat work/output' /dev/null <<< ''
           test -s work/output/dump.cs
           cp work/output/dump.cs artifact/
           cp work/output/script.json artifact/ 2>/dev/null || true
