@@ -464,35 +464,6 @@ static void* install_worker(void*) {
 }
 } // namespace
 
-extern "C" JNIEXPORT void JNICALL Java_lacadmin_AdminGivePlugin_nativeStart(JNIEnv*, jclass);
-extern "C" JNIEXPORT void JNICALL Java_lacadmin_AdminGivePlugin_nativeStop(JNIEnv*, jclass);
-
-extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-    JNIEnv* env = nullptr;
-    if (!vm || vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
-        LOGE("JNI_OnLoad: could not obtain JNIEnv");
-        return JNI_ERR;
-    }
-    jclass plugin = env->FindClass("lacadmin/AdminGivePlugin");
-    if (!plugin) {
-        LOGE("JNI_OnLoad: cannot find lacadmin/AdminGivePlugin in the plugin ClassLoader");
-        if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
-        return JNI_ERR;
-    }
-    JNINativeMethod methods[] = {
-        { const_cast<char*>("nativeStart"), const_cast<char*>("()V"), reinterpret_cast<void*>(Java_lacadmin_AdminGivePlugin_nativeStart) },
-        { const_cast<char*>("nativeStop"), const_cast<char*>("()V"), reinterpret_cast<void*>(Java_lacadmin_AdminGivePlugin_nativeStop) }
-    };
-    const jint result = env->RegisterNatives(plugin, methods, sizeof(methods) / sizeof(methods[0]));
-    env->DeleteLocalRef(plugin);
-    if (result != JNI_OK) {
-        LOGE("JNI_OnLoad: RegisterNatives failed (%d)", result);
-        if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
-        return JNI_ERR;
-    }
-    LOGI("JNI_OnLoad: nativeStart/nativeStop explicitly registered");
-    return JNI_VERSION_1_6;
-}
 extern "C" JNIEXPORT void JNICALL
 Java_lacadmin_AdminGivePlugin_nativeStart(JNIEnv*, jclass) {
     if (g_hooked.load(std::memory_order_acquire)) {
