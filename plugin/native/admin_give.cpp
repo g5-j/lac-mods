@@ -1,6 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
-#include <dobby.h>
+#include "And64InlineHook.hpp"
 #include <link.h>
 #include <dlfcn.h>
 #include <pthread.h>
@@ -329,15 +329,15 @@ static void* install_worker(void*) {
             LOGE("Version guard failed at CmdSendChat RVA 0x1080A54; hook not installed");
             return nullptr;
         }
-        int result = DobbyHook(target, reinterpret_cast<void*>(hooked_CmdSendChat),
-                               reinterpret_cast<void**>(&original_CmdSendChat));
-        if (result == 0 && original_CmdSendChat) {
+        A64HookFunction(target, reinterpret_cast<void*>(hooked_CmdSendChat),
+                        reinterpret_cast<void**>(&original_CmdSendChat));
+        if (original_CmdSendChat) {
             g_enabled.store(true, std::memory_order_release);
             g_hooked.store(true, std::memory_order_release);
             LOGI("OK: /admin give hook installed (LAC 1.9.7 arm64)");
             return nullptr;
         }
-        LOGE("DobbyHook failed: %d", result);
+        LOGE("A64HookFunction did not return an original trampoline");
         return nullptr;
     }
     LOGE("Timed out waiting for IL2CPP initialization");
