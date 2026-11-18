@@ -206,7 +206,7 @@ static bool is_host_or_admin(void* kill_feed) {
         void* args[] = { &i };
         void* user = invoke(item_method, users, args);
         if (!user) continue;
-        int32_t state = -1;
+        uint8_t state = 0xff; // UserState has an 8-bit underlying type in LAC 1.9.7.
         void* device = nullptr;
         il2cpp_field_get_value(user, matter_field, &state);
         il2cpp_field_get_value(user, device_field, &device);
