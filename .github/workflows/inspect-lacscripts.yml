@@ -13,7 +13,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifact/phone_messenger artifact/admin_give
+          mkdir -p artifact/phone_messenger artifact/admin_give work/jadx
           unzip -q phone_messenger.lacscripts -d artifact/phone_messenger
           unzip -q admin-give.lacscripts -d artifact/admin_give
           for d in artifact/phone_messenger artifact/admin_give; do
@@ -22,11 +22,12 @@ jobs:
             find "$d" -type f -printf '%P\t%s bytes\n' | sort > "$d/files.txt"
           done
           sha256sum phone_messenger.lacscripts admin-give.lacscripts > artifact/source-sha256.txt
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq jadx
+          curl -fsSL --retry 3 https://github.com/skylot/jadx/releases/download/v1.5.7/jadx-1.5.7.zip -o work/jadx.zip
+          unzip -q work/jadx.zip -d work/jadx
+          chmod +x work/jadx/bin/jadx
           mkdir -p artifact/phone_messenger/java artifact/admin_give/java
-          jadx --no-res --show-bad-code -d artifact/phone_messenger/java artifact/phone_messenger/classes.dex || true
-          jadx --no-res --show-bad-code -d artifact/admin_give/java artifact/admin_give/classes.dex || true
+          work/jadx/bin/jadx --no-res --show-bad-code -d artifact/phone_messenger/java artifact/phone_messenger/classes.dex
+          work/jadx/bin/jadx --no-res --show-bad-code -d artifact/admin_give/java artifact/admin_give/classes.dex
           file artifact/phone_messenger/lib/arm64-v8a/*.so artifact/admin_give/lib/arm64-v8a/*.so > artifact/native-file-types.txt
           readelf -Ws artifact/phone_messenger/lib/arm64-v8a/*.so > artifact/phone_messenger/native-symbols.txt
           readelf -Ws artifact/admin_give/lib/arm64-v8a/*.so > artifact/admin_give/native-symbols.txt
