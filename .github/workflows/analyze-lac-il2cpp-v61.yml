@@ -87,7 +87,7 @@ jobs:
             cat artifact/method-disassembly.txt
           } >> artifact/analysis-report.txt
           grep -q 'INSTRUCTION_COUNT=' artifact/method-disassembly.txt
-          test "$(grep -c '^===== ' artifact/method-disassembly.txt)" -eq 9
+          test "$(grep -c '^===== ' artifact/method-disassembly.txt)" -eq 15
 
       - name: Find inventory and chat callers
         shell: bash
