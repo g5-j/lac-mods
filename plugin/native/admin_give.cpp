@@ -10,6 +10,11 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <array>
+#include <fstream>
+#include <iterator>
+#include <sstream>
+#include <iomanip>
 #include <atomic>
 
 #define TAG "LACAdminGive"
@@ -41,6 +46,10 @@ static void* g_il2cpp = nullptr;
 static Il2CppDomain* g_domain = nullptr;
 static std::atomic<bool> g_enabled{false};
 static std::atomic<bool> g_hooked{false};
+static std::atomic<bool> g_installing{false};
+static std::string g_il2cpp_path;
+static uintptr_t g_exec_begin = 0;
+static uintptr_t g_exec_end = 0;
 
 static domain_get_fn il2cpp_domain_get = nullptr;
 static thread_attach_fn il2cpp_thread_attach = nullptr;
@@ -56,6 +65,94 @@ static string_new_fn il2cpp_string_new = nullptr;
 static string_chars_fn il2cpp_string_chars = nullptr;
 static string_length_fn il2cpp_string_length = nullptr;
 static object_unbox_fn il2cpp_object_unbox = nullptr;
+
+static uint32_t sha_rotr(uint32_t x, uint32_t n) { return (x >> n) | (x << (32 - n)); }
+static bool sha256_file(const std::string& path, std::string& hex) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (!in.good() && !in.eof()) return false;
+    const uint64_t bit_len = static_cast<uint64_t>(data.size()) * 8ULL;
+    data.push_back(0x80);
+    while ((data.size() % 64) != 56) data.push_back(0);
+    for (int i = 7; i >= 0; --i) data.push_back(static_cast<uint8_t>(bit_len >> (i * 8)));
+    static const uint32_t k[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    };
+    uint32_t h[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    for (size_t off = 0; off < data.size(); off += 64) {
+        uint32_t w[64]{};
+        for (int i = 0; i < 16; ++i) {
+            const size_t p = off + static_cast<size_t>(i) * 4;
+            w[i] = (static_cast<uint32_t>(data[p]) << 24) | (static_cast<uint32_t>(data[p+1]) << 16) |
+                   (static_cast<uint32_t>(data[p+2]) << 8) | static_cast<uint32_t>(data[p+3]);
+        }
+        for (int i = 16; i < 64; ++i) {
+            const uint32_t s0 = sha_rotr(w[i-15],7) ^ sha_rotr(w[i-15],18) ^ (w[i-15] >> 3);
+            const uint32_t s1 = sha_rotr(w[i-2],17) ^ sha_rotr(w[i-2],19) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+        uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+        for (int i = 0; i < 64; ++i) {
+            const uint32_t s1=sha_rotr(e,6)^sha_rotr(e,11)^sha_rotr(e,25);
+            const uint32_t ch=(e&f)^(~e&g);
+            const uint32_t t1=hh+s1+ch+k[i]+w[i];
+            const uint32_t s0=sha_rotr(a,2)^sha_rotr(a,13)^sha_rotr(a,22);
+            const uint32_t maj=(a&b)^(a&c)^(b&c);
+            const uint32_t t2=s0+maj;
+            hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+        }
+        h[0]+=a; h[1]+=b; h[2]+=c; h[3]+=d; h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
+    }
+    std::ostringstream out;
+    out << std::hex << std::setfill('0');
+    for (uint32_t v : h) out << std::setw(8) << v;
+    hex = out.str();
+    return true;
+}
+static std::string locate_il2cpp_file() {
+    if (!g_il2cpp_path.empty() && access(g_il2cpp_path.c_str(), R_OK) == 0) return g_il2cpp_path;
+    std::ifstream maps("/proc/self/maps");
+    std::string line;
+    while (std::getline(maps, line)) {
+        if (line.find("libil2cpp.so") == std::string::npos) continue;
+        const size_t slash = line.find('/');
+        if (slash == std::string::npos) continue;
+        std::string path = line.substr(slash);
+        const std::string deleted = " (deleted)";
+        if (path.size() >= deleted.size() && path.compare(path.size()-deleted.size(), deleted.size(), deleted) == 0)
+            path.resize(path.size()-deleted.size());
+        if (access(path.c_str(), R_OK) == 0) return path;
+    }
+    return {};
+}
+static bool validate_game_library() {
+    const std::string path = locate_il2cpp_file();
+    if (path.empty()) {
+        LOGE("Cannot locate readable libil2cpp.so; refusing to install hook");
+        return false;
+    }
+    std::string actual;
+    if (!sha256_file(path, actual)) {
+        LOGE("Cannot calculate SHA-256 for %s", path.c_str());
+        return false;
+    }
+    static const char* expected = "29ca3610d9e89c2eba9f0abab11cc2adc96b00470a30136f55b3c39e10465f06";
+    if (actual != expected) {
+        LOGE("Game library SHA-256 mismatch; expected %s, got %s", expected, actual.c_str());
+        return false;
+    }
+    LOGI("Game library SHA-256 verified: %s", actual.c_str());
+    return true;
+}
+
 
 using CmdSendChatFn = void (*)(void*, void*, void*, const MethodInfo*);
 static CmdSendChatFn original_CmdSendChat = nullptr;
@@ -313,6 +410,17 @@ static void hooked_CmdSendChat(void* self, void* prefix, void* chat, const Metho
 static int find_il2cpp_base(struct dl_phdr_info* info, size_t, void* data) {
     if (info->dlpi_name && std::strstr(info->dlpi_name, "libil2cpp.so")) {
         *static_cast<uintptr_t*>(data) = static_cast<uintptr_t>(info->dlpi_addr);
+        g_il2cpp_path = info->dlpi_name;
+        g_exec_begin = 0;
+        g_exec_end = 0;
+        for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
+            const ElfW(Phdr)& ph = info->dlpi_phdr[i];
+            if (ph.p_type == PT_LOAD && (ph.p_flags & PF_X)) {
+                g_exec_begin = static_cast<uintptr_t>(ph.p_vaddr);
+                g_exec_end = g_exec_begin + static_cast<uintptr_t>(ph.p_memsz);
+                break;
+            }
+        }
         return 1;
     }
     return 0;
@@ -323,10 +431,18 @@ static void* install_worker(void*) {
         uintptr_t base = 0;
         dl_iterate_phdr(find_il2cpp_base, &base);
         if (!base || !g_domain) { usleep(100000); continue; }
-        void* target = reinterpret_cast<void*>(base + 0x1080A54);
+        if (!validate_game_library()) { g_installing.store(false); return nullptr; }
+        const uintptr_t hook_rva = 0x1080A54;
+        if (g_exec_begin == 0 || hook_rva < g_exec_begin || hook_rva + sizeof(uint32_t) > g_exec_end) {
+            LOGE("Hook RVA is outside the executable PT_LOAD segment");
+            g_installing.store(false);
+            return nullptr;
+        }
+        void* target = reinterpret_cast<void*>(base + hook_rva);
         const uint32_t expected_prologue = 0xD10703FF;
         if (*reinterpret_cast<const uint32_t*>(target) != expected_prologue) {
-            LOGE("Version guard failed at CmdSendChat RVA 0x1080A54; hook not installed");
+            LOGE("Version guard failed at UserCode_CmdSendChat RVA 0x1080A54; hook not installed");
+            g_installing.store(false);
             return nullptr;
         }
         A64HookFunction(target, reinterpret_cast<void*>(hooked_CmdSendChat),
@@ -335,28 +451,71 @@ static void* install_worker(void*) {
             g_enabled.store(true, std::memory_order_release);
             g_hooked.store(true, std::memory_order_release);
             LOGI("OK: /admin give hook installed (LAC 1.9.7 arm64)");
+            g_installing.store(false);
             return nullptr;
         }
         LOGE("A64HookFunction did not return an original trampoline");
+        g_installing.store(false);
         return nullptr;
     }
     LOGE("Timed out waiting for IL2CPP initialization");
+    g_installing.store(false);
     return nullptr;
 }
 } // namespace
 
-extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
+extern "C" JNIEXPORT void JNICALL Java_lacadmin_AdminGivePlugin_nativeStart(JNIEnv*, jclass);
+extern "C" JNIEXPORT void JNICALL Java_lacadmin_AdminGivePlugin_nativeStop(JNIEnv*, jclass);
+
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+    JNIEnv* env = nullptr;
+    if (!vm || vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
+        LOGE("JNI_OnLoad: could not obtain JNIEnv");
+        return JNI_ERR;
+    }
+    jclass plugin = env->FindClass("lacadmin/AdminGivePlugin");
+    if (!plugin) {
+        LOGE("JNI_OnLoad: cannot find lacadmin/AdminGivePlugin in the plugin ClassLoader");
+        if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
+        return JNI_ERR;
+    }
+    JNINativeMethod methods[] = {
+        { const_cast<char*>("nativeStart"), const_cast<char*>("()V"), reinterpret_cast<void*>(Java_lacadmin_AdminGivePlugin_nativeStart) },
+        { const_cast<char*>("nativeStop"), const_cast<char*>("()V"), reinterpret_cast<void*>(Java_lacadmin_AdminGivePlugin_nativeStop) }
+    };
+    const jint result = env->RegisterNatives(plugin, methods, sizeof(methods) / sizeof(methods[0]));
+    env->DeleteLocalRef(plugin);
+    if (result != JNI_OK) {
+        LOGE("JNI_OnLoad: RegisterNatives failed (%d)", result);
+        if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
+        return JNI_ERR;
+    }
+    LOGI("JNI_OnLoad: nativeStart/nativeStop explicitly registered");
     return JNI_VERSION_1_6;
 }
 extern "C" JNIEXPORT void JNICALL
 Java_lacadmin_AdminGivePlugin_nativeStart(JNIEnv*, jclass) {
-    if (g_hooked.load()) { g_enabled.store(true); return; }
+    if (g_hooked.load(std::memory_order_acquire)) {
+        g_enabled.store(true, std::memory_order_release);
+        LOGI("AdminGive hook already installed; re-enabled");
+        return;
+    }
+    bool expected = false;
+    if (!g_installing.compare_exchange_strong(expected, true)) {
+        LOGI("AdminGive installation is already running");
+        return;
+    }
     pthread_t worker;
-    if (pthread_create(&worker, nullptr, install_worker, nullptr) == 0) pthread_detach(worker);
-    else LOGE("Could not start hook worker");
+    if (pthread_create(&worker, nullptr, install_worker, nullptr) == 0) {
+        pthread_detach(worker);
+        LOGI("AdminGive hook worker started");
+    } else {
+        g_installing.store(false);
+        LOGE("Could not start hook worker");
+    }
 }
 extern "C" JNIEXPORT void JNICALL
 Java_lacadmin_AdminGivePlugin_nativeStop(JNIEnv*, jclass) {
     g_enabled.store(false, std::memory_order_release);
-    LOGI("AdminGive disabled; process restart fully unloads native hook");
+    LOGI("AdminGive disabled; hook is inert until re-enabled or process restart");
 }
