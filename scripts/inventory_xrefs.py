@@ -3,7 +3,7 @@
 import re, sys
 from collections import defaultdict
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_ARM64
+from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
 
 if len(sys.argv) != 4:
     raise SystemExit("usage: inventory_xrefs.py libil2cpp.so dump.cs output.txt")
@@ -47,7 +47,7 @@ targets = {
     0x1079F60: "PlayerKillFeed.CheckChat",
 }
 calls = defaultdict(list)
-md = Cs(CS_ARCH_ARM64)
+md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
 with open(elf_path, "rb") as f:
     elf = ELFFile(f)
     for seg in elf.iter_segments():
