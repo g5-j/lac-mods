@@ -72,3 +72,29 @@ It also contains item/currency literals `cash`, `:cash`, `*cash`, `Cash`, and `M
 ## Disassembly pass
 
 The ARM64 library disassembly confirms that the listed method RVAs resolve to executable code. `InventoryAdd` calls string parsing helpers (`Split`, `Contains`, equality checks, and integer parsing), so inventory is stored in a serialized string rather than a simple numeric field. The exact delimiter/record schema and sync behavior still need to be traced before constructing inventory data.
+
+
+## Exact ARM64 method-range analysis (verified)
+
+Analysis run: https://github.com/g5-j/lac-mods/actions/runs/44349704308
+The disassembler now bounds each method by the next method RVA from dump.cs, instead of blindly reading a fixed number of bytes. All nine requested methods were found and disassembled; the workflow completed successfully.
+
+### Confirmed inventory behavior
+
+- PlayerControl.InventoryAdd reads the current inventory string at offset 0x98, splits/parses existing entries, compares item identifiers, and rebuilds the serialized string with string concatenation. It writes the updated string back to inventory at offset 0x98.
+- PlayerControl.InventoryDelete similarly parses and rebuilds the inventory string.
+- PlayerControl.InventoryGet reads/parses the serialized inventory string.
+- Neither InventoryAdd nor InventoryDelete directly calls the game's Mirror command/RPC send methods in its own native method body. Therefore, calling either method on a client is only a local object mutation unless a separate authoritative synchronization operation is performed.
+- PlayerControl.CmdUpdateInventory is a generated Mirror [Command] wrapper. Its body obtains a pooled NetworkWriter, writes the string argument, and calls SendCommandInternal with requiresAuthority = true. It has no target-player ID parameter. This is the normal authority-restricted command path, not a demonstrated way for an arbitrary client to edit another player's inventory.
+- PlayerControl.RpcUpdateInventory is a generated [ClientRpc] wrapper and routes its string through Mirror's RPC send path. It is not a client-callable substitute for an authorized server operation.
+- PlayersManager.GetPlayer(string) resolves a player through the static player dictionary; it does not itself perform an inventory update or permission check.
+
+### Chat command path
+
+- PlayerKillFeed.CheckChat is a large method (2,903 decoded instructions in its metadata-bounded range) and includes a call to CmdSendChat.
+- The string table contains /give and the failure text "can't give the item.". This is evidence of an existing give-command path, but the string table alone does not identify its handler, argument order, or authorization logic.
+- The exact command handler and the mapping from a player/session to ServerUser.matter remain unverified. No /admin give plugin command has been added yet.
+
+### Implementation decision
+
+Do not implement /admin give by directly calling InventoryAdd on the target PlayerControl: that would risk changing only the local copy and not the server's authoritative inventory. The next analysis task is to locate the existing /give handler and verify its server-side rank/host checks. If that built-in command already supports the desired operation, the plugin can potentially act as a validated command alias instead of reimplementing inventory networking.
