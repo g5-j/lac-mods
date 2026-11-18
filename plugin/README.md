@@ -23,7 +23,7 @@ Only a sender whose server-side ServerUser record has state host (1) or admin (2
 - Calls PlayerControl.InventoryAdd on the target.
 - Reads the resulting authoritative inventory and invokes PlayerControl.RpcUpdateInventory to synchronize clients.
 - Reports success/failure through PlayerKillFeed.RpcGetChat.
-- Registers both JNI methods explicitly with `RegisterNatives` from `JNI_OnLoad`.
+- Exports `Java_lacadmin_AdminGivePlugin_nativeStart/nativeStop` for standard ART JNI symbol lookup, matching the working Messenger plugin. It intentionally avoids `JNI_OnLoad`/`FindClass`, which adds a class-loader-sensitive failure point.
 - Guards the Java plugin lifecycle so `nativeStop` is never called before the library and start request are established.
 - Prevents concurrent hook-install workers and logs installation failures.
 - Passes all non-matching chat messages to the original method unchanged.
