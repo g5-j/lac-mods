@@ -1,0 +1,91 @@
+name: Build LAC Admin Give Plugin
+on:
+  push:
+    branches:
+      - feature/admin-give-plugin
+    paths:
+      - "plugin/**"
+      - ".github/workflows/build-admin-give.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android build tools and NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+      - name: Fetch Dobby hook engine
+        run: |
+          mkdir -p third_party
+          git clone --depth 1 https://github.com/jmpews/Dobby.git third_party/Dobby
+      - name: Build native ARM64 library
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          cmake -S plugin/native -B build/native \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-23 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native --target lac_admin_give --parallel 2
+      - name: Compile plugin DEX
+        run: |
+          mkdir -p build/stubs build/classes build/dex
+          javac -source 8 -target 8 -d build/stubs \
+            plugin/stubs/local/lacmods/api/LacPlugin.java \
+            plugin/stubs/local/lacmods/api/PluginContext.java
+          javac -source 8 -target 8 -cp build/stubs -d build/classes \
+            plugin/java/lacadmin/AdminGivePlugin.java
+          "$ANDROID_HOME/build-tools/35.0.0/d8" --min-api 23 \
+            --output build/dex build/classes/lacadmin/AdminGivePlugin.class
+      - name: Package and validate .lacscripts
+        run: |
+          mkdir -p dist/package/lib/arm64-v8a
+          cp build/dex/classes.dex dist/package/classes.dex
+          cp build/native/liblac_admin_give.so dist/package/lib/arm64-v8a/
+          python3 - <<'PY'
+          import hashlib, json, pathlib, zipfile
+          root = pathlib.Path("dist/package")
+          paths = ["classes.dex", "lib/arm64-v8a/liblac_admin_give.so"]
+          files = {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in paths}
+          manifest = {
+            "format": "lacscripts", "format_version": 2,
+            "runtime": "android-plugin", "api_version": 1,
+            "game_version": "1.9.7", "id": "admin-give-server-arm64",
+            "name": "Admin Give",
+            "description": "Host/admin-only server inventory grant command for LAC Online 1.9.7.",
+            "entry_class": "lacadmin.AdminGivePlugin", "files": files
+          }
+          (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+          with zipfile.ZipFile("dist/admin-give.lacscripts", "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            for p in ["manifest.json", *paths]: z.write(root / p, p)
+          with zipfile.ZipFile("dist/admin-give.lacscripts") as z:
+            assert set(z.namelist()) == {"manifest.json", *paths}
+            m = json.loads(z.read("manifest.json"))
+            for p, digest in m["files"].items():
+              assert hashlib.sha256(z.read(p)).hexdigest() == digest
+            assert z.read("classes.dex").startswith(b"dex\\n")
+            so = z.read("lib/arm64-v8a/liblac_admin_give.so")
+            assert so[:4] == b"\\x7fELF" and so[4] == 2 and so[5] == 1
+          print(json.dumps(manifest, indent=2))
+          print("PACKAGE_VALIDATION=PASS")
+          PY
+          sha256sum dist/admin-give.lacscripts
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-give-lacscripts-${{ github.sha }}
+          path: dist/admin-give.lacscripts
+          if-no-files-found: error
+          retention-days: 30
