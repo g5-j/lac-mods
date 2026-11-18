@@ -71,9 +71,9 @@ jobs:
             m = json.loads(z.read("manifest.json"))
             for p, digest in m["files"].items():
               assert hashlib.sha256(z.read(p)).hexdigest() == digest
-            assert z.read("classes.dex").startswith(b"dex\\n")
+            assert z.read("classes.dex").startswith(b"dex\n")
             so = z.read("lib/arm64-v8a/liblac_admin_give.so")
-            assert so[:4] == b"\\x7fELF" and so[4] == 2 and so[5] == 1
+            assert so[:4] == b"\x7fELF" and so[4] == 2 and so[5] == 1
           print(json.dumps(manifest, indent=2))
           print("PACKAGE_VALIDATION=PASS")
           PY
