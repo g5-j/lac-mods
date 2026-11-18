@@ -21,19 +21,14 @@ public final class AdminGivePlugin implements LacPlugin {
             context.log("AdminGive: loading native library for LAC 1.9.7");
             System.loadLibrary("lac_admin_give");
             libraryLoaded = true;
-            context.log("AdminGive: native library loaded; JNI methods registered");
+            context.log("AdminGive: native library loaded; exported JNI methods ready");
             nativeStart();
             startRequested = true;
             context.log("AdminGive: native hook installation queued; check native log for final status");
         } catch (Throwable error) {
             context.log("AdminGive: START FAILED\n" + stackTrace(error));
-            if (libraryLoaded) {
-                try {
-                    nativeStop();
-                } catch (Throwable stopError) {
-                    context.log("AdminGive: cleanup after start failure also failed: " + stopError);
-                }
-            }
+            // Do not call nativeStop here: nativeStart may not have resolved or run.
+            // The plugin host will discard this instance after the failed start.
             throw new IllegalStateException("AdminGive failed to initialize", error);
         }
     }
