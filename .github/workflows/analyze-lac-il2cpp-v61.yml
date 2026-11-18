@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/analyze-lac-il2cpp-v61.yml"
       - "scripts/disassemble_lac_methods.py"
+      - "scripts/inventory_xrefs.py"
 
 permissions:
   contents: read
@@ -87,6 +88,14 @@ jobs:
           } >> artifact/analysis-report.txt
           grep -q 'INSTRUCTION_COUNT=' artifact/method-disassembly.txt
           test "$(grep -c '^===== ' artifact/method-disassembly.txt)" -eq 9
+
+      - name: Find inventory and chat callers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/inventory_xrefs.py work/libil2cpp.so artifact/dump.cs artifact/inventory-callers.txt
+          test -s artifact/inventory-callers.txt
+          cat artifact/inventory-callers.txt >> artifact/analysis-report.txt
 
       - name: Upload compact analysis
         uses: actions/upload-artifact@v4
