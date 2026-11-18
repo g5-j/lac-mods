@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - ".github/workflows/analyze-lac-il2cpp-v61.yml"
+      - "scripts/disassemble_lac_methods.py"
 
 permissions:
   contents: read
