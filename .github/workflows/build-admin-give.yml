@@ -43,7 +43,7 @@ jobs:
             plugin/stubs/local/lacmods/api/PluginContext.java
           javac -source 8 -target 8 -cp build/stubs -d build/classes \
             plugin/java/lacadmin/AdminGivePlugin.java
-          "$ANDROID_HOME/build-tools/35.0.0/d8" --min-api 23 \
+          "$ANDROID_HOME/build-tools/35.0.0/d8" --min-api 23 --classpath build/stubs \
             --output build/dex build/classes/lacadmin/AdminGivePlugin.class
       - name: Package and validate .lacscripts
         run: |
