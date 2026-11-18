@@ -12,13 +12,19 @@ ELF_PATH, DUMP_PATH, OUT_PATH = sys.argv[1:]
 TARGETS = {
     "PlayerKillFeed.CheckChat": "CheckChat(string _chat)",
     "PlayerKillFeed.CmdSendChat": "CmdSendChat(string _prefix, string _chat)",
+    "PlayerKillFeed.UserCode_CmdSendChat": "UserCode_CmdSendChat__String__String(string _prefix, string _chat)",
     "PlayerKillFeed.RpcGetChat": "RpcGetChat(string _chat, int _range, uint _pmID)",
     "PlayersManager.GetPlayer": "GetPlayer(string _playerID)",
     "PlayerControl.CmdUpdateInventory": "CmdUpdateInventory(string _data)",
+    "PlayerControl.UserCode_CmdUpdateInventory": "UserCode_CmdUpdateInventory__String(string _data)",
     "PlayerControl.RpcUpdateInventory": "RpcUpdateInventory(string _data)",
+    "PlayerControl.UserCode_RpcUpdateInventory": "UserCode_RpcUpdateInventory__String(string _data)",
+    "PlayerControl.UserCode_RpcUpdateInventoryIndividual": "UserCode_RpcUpdateInventoryIndividual__String(string _data)",
     "PlayerControl.InventoryAdd": "InventoryAdd(string _item, string _value)",
     "PlayerControl.InventoryDelete": "InventoryDelete(string _item, string _value)",
     "PlayerControl.InventoryGet": "InventoryGet(string _item)",
+    "EditorTriggerBox.ExecuteCmd": "ExecuteCmd(string[] commandLines)",
+    "EditorTriggerBox.ExecuteNonePlayerCmd": "ExecuteNonePlayerCmd(string[] commandLines, Transform _target, string _triggerMode)",
 }
 
 text = open(DUMP_PATH, encoding="utf-8", errors="replace").read()
@@ -41,8 +47,8 @@ if missing:
 
 sorted_rvas = sorted(set(all_rvas))
 next_rva = {}
-for rva in sorted_rvas:
-    next_rva[rva] = next((x for x in sorted_rvas if x > rva), None)
+for index, rva in enumerate(sorted_rvas):
+    next_rva[rva] = sorted_rvas[index + 1] if index + 1 < len(sorted_rvas) else None
 
 md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
 md.detail = True
@@ -63,8 +69,8 @@ with open(ELF_PATH, "rb") as f, open(OUT_PATH, "w", encoding="utf-8") as out:
         calls = set()
         for ins in md.disasm(raw, rva):
             out.write(f"0x{ins.address:08X}: {ins.mnemonic:8} {ins.op_str}\n")
-            if ins.mnemonic in ("bl", "blr") and ins.op_str.startswith("0x"):
-                calls.add(ins.op_str)
+            if ins.mnemonic in ("bl", "blr") and ins.op_str.startswith("#0x"):
+                calls.add(ins.op_str[1:])
             count += 1
         out.write(f"INSTRUCTION_COUNT={count}\n")
         out.write("DIRECT_CALL_TARGETS=" + (", ".join(sorted(calls)) if calls else "(none)") + "\n")
