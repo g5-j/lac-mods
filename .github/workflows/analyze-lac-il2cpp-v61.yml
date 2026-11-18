@@ -1,0 +1,83 @@
+name: Analyze LAC v61 IL2CPP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/analyze-lac-il2cpp-v61.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Download and extract LAC v61
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/apk work/dumper work/output artifact
+          curl --fail --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 1200 \
+            --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36' \
+            'https://d.apkpure.com/b/XAPK/com.MA.LAC?versionCode=61' -o work/LAC-v61.xapk
+          unzip -q work/LAC-v61.xapk -d work/apk
+          APK='work/apk/com.MA.LAC.apk'
+          test -s "$APK"
+          unzip -p "$APK" assets/bin/Data/Managed/Metadata/global-metadata.dat > work/global-metadata.dat
+          unzip -p "$APK" lib/arm64-v8a/libil2cpp.so > work/libil2cpp.so
+          test -s work/global-metadata.dat
+          test -s work/libil2cpp.so
+          file work/global-metadata.dat work/libil2cpp.so
+          sha256sum work/global-metadata.dat work/libil2cpp.so > artifact/input-sha256.txt
+          cp work/global-metadata.dat artifact/
+          cp work/libil2cpp.so artifact/
+
+      - name: Download Il2CppDumper
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            'https://github.com/Perfare/Il2CppDumper/releases/download/v6.7.46/Il2CppDumper-net6-v6.7.46.zip' \
+            -o work/Il2CppDumper.zip
+          unzip -q work/Il2CppDumper.zip -d work/dumper
+          test -f work/dumper/Il2CppDumper.dll
+
+      - name: Dump IL2CPP metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet work/dumper/Il2CppDumper.dll work/libil2cpp.so work/global-metadata.dat work/output
+          test -s work/output/dump.cs
+          cp work/output/dump.cs artifact/
+          cp work/output/script.json artifact/ 2>/dev/null || true
+          cp work/output/stringliteral.json artifact/ 2>/dev/null || true
+          cp work/output/il2cpp.h artifact/ 2>/dev/null || true
+          {
+            echo "LAC package: com.MA.LAC"
+            echo "Requested versionCode: 61"
+            echo "Metadata version: 31"
+            echo "Il2CppDumper: v6.7.46"
+            echo
+            echo "Potential chat / inventory / permission symbols:"
+            grep -Ein -m 3000 'chat|message|inventory|item|cash|money|admin|rank|host|player|currency|wallet' artifact/dump.cs || true
+          } > artifact/target-symbols.txt
+          echo "Dump completed." > artifact/analysis-report.txt
+          du -h artifact/* >> artifact/analysis-report.txt
+
+      - name: Upload compact analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAC-v61-IL2CPP-analysis
+          path: artifact/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
