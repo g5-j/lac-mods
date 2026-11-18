@@ -80,9 +80,13 @@ jobs:
           sha256sum dist/admin-give.lacscripts
           SO="dist/package/lib/arm64-v8a/liblac_admin_give.so"
           DEX="dist/package/classes.dex"
-          for symbol in JNI_OnLoad Java_lacadmin_AdminGivePlugin_nativeStart Java_lacadmin_AdminGivePlugin_nativeStop; do
+          for symbol in Java_lacadmin_AdminGivePlugin_nativeStart Java_lacadmin_AdminGivePlugin_nativeStop; do
             readelf -Ws "$SO" | grep -Fq "$symbol" || { echo "Missing JNI symbol: $symbol"; exit 1; }
           done
+          if readelf -Ws "$SO" | grep -Fq "JNI_OnLoad"; then
+            echo "Unexpected JNI_OnLoad: this plugin uses the same exported JNI lookup model as the working Messenger plugin."
+            exit 1
+          fi
           strings "$SO" | grep -Fq "29ca3610d9e89c2eba9f0abab11cc2adc96b00470a30136f55b3c39e10465f06"
           strings "$DEX" | grep -Fq "nativeStart"
           strings "$DEX" | grep -Fq "nativeStop"
