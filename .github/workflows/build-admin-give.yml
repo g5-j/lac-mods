@@ -26,14 +26,6 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
-      - name: Fetch Dobby hook engine
-        run: |
-          mkdir -p third_party
-          git clone --depth 1 https://github.com/jmpews/Dobby.git third_party/Dobby
-          # Dobby's upstream ARM64 closure bridge uses Mach-O @PAGE syntax.
-          # Convert those two relocations to the equivalent ELF/AArch64 syntax.
-          sed -i 's/adrp TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGE/adrp TMP_REG_0, cdecl(common_closure_bridge_handler)/' third_party/Dobby/source/TrampolineBridge/ClosureTrampolineBridge/arm64/closure_bridge_arm64.asm
-          sed -i 's/add TMP_REG_0, TMP_REG_0, cdecl(common_closure_bridge_handler)@PAGEOFF/add TMP_REG_0, TMP_REG_0, :lo12:cdecl(common_closure_bridge_handler)/' third_party/Dobby/source/TrampolineBridge/ClosureTrampolineBridge/arm64/closure_bridge_arm64.asm
       - name: Build native ARM64 library
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
