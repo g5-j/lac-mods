@@ -20,8 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Android build tools
-        uses: android-actions/setup-android@v3
+      - name: Locate preinstalled Android SDK tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ANDROID_HOME"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -n "$SDKMANAGER"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
       - name: Install apktool and build tools
         shell: bash
         run: |
@@ -244,3 +250,5 @@ jobs:
           retention-days: 14
 
 # Trigger build from the workflow-file commit.
+
+# Retry after removing the obsolete SDK tools package setup.
