@@ -81,7 +81,7 @@ jobs:
             mkdir -p "$out"
             if unzip -t "$obb" >/dev/null 2>&1; then
               unzip -q "$obb" -d "$out"
-              find "$out" -type f -printf '%f\n' | awk -F. '{ext=tolower($NF); if (NF==1) ext="[no extension]"; count[ext]++} END {for (e in count) print "${rel}: " e " files=" count[e]}' >> artifact/report/obb-file-list.txt
+              find "$out" -type f -printf '%f\n' | awk -v rel="$rel" -F. '{ext=tolower($NF); if (NF==1) ext="[no extension]"; count[ext]++} END {for (e in count) print rel ": " e " files=" count[e]}' >> artifact/report/obb-file-list.txt
             else
               echo "$rel is not a ZIP-compatible OBB; raw file retained for scanning" >> artifact/report/obb-file-list.txt
               cp "$obb" "$out/obb.bin"
@@ -119,22 +119,22 @@ jobs:
                               if isinstance(payload,str): raw=payload.encode("utf-8","replace")
                               else: raw=bytes(payload)
                               decoded=raw.decode("utf-8","replace")
-                              ui_re=re.compile(r"(?i)\\b(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)\\b|[ء-ي]")
-                              excluded_re=re.compile(r"(?i)\\b(weapon|weapons|gun|guns|firearm|ammo|ammunition|rifle|pistol|shotgun|sniper|grenade|knife|sword|bullet|launcher|rocket|crossbow|bow|melee|explosive)\\b")
+                              ui_re=re.compile(r"(?i)\b(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)\\b|[ء-ي]")
+                              excluded_re=re.compile(r"(?i)\b(weapon|weapons|gun|guns|firearm|ammo|ammunition|rifle|pistol|shotgun|sniper|grenade|knife|sword|bullet|launcher|rocket|crossbow|bow|melee|explosive)\\b")
                               if excluded_re.search(str(name)) or excluded_re.search(str(p)): continue
                               if not ui_re.search(str(name)): continue
                               safe_lines=[line for line in decoded.splitlines() if ui_re.search(line) and not excluded_re.search(line)]
                               if not safe_lines: continue
                               safe="".join(c if c.isalnum() or c in "._-" else "_" for c in str(name))[:100]
                               dest=out/f"{p.name}_{safe}_{i}.txt"
-                              dest.write_text("\\n".join(safe_lines)+"\\n",encoding="utf-8")
+                              dest.write_text("\n".join(safe_lines)+"\\n",encoding="utf-8")
                               rows.append({"source":str(p),"type":typ,"name":str(name),"output":str(dest),"matched_ui_lines":len(safe_lines)})
                           else:
                               continue
                   except Exception:
                       continue
           pathlib.Path("artifact/report/unity-object-index.json").write_text(json.dumps(rows,ensure_ascii=False,indent=2))
-          print(f"Indexed {len(rows)} Unity TextAsset/MonoBehaviour objects")
+          print(f"Indexed {len(rows)} UI/localization TextAssets")
           PY
           python work/extract_unity_text.py
           : > artifact/report/ui-localization-hits.txt
