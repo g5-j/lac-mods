@@ -67,7 +67,6 @@ jobs:
           pathlib.Path("artifact/report/package-summary.json").write_text(json.dumps(out,ensure_ascii=False,indent=2))
           print(json.dumps(out,ensure_ascii=False,indent=2))
           PY
-          cp work/LAC-latest.xapk artifact/LAC-latest.xapk
           find work/unpacked -type f -iname '*.obb' -exec cp --parents {} artifact/ \;
 
       - name: Extract and inventory OBB contents
@@ -178,8 +177,6 @@ jobs:
         with:
           name: LAC-latest-XAPK-full-inspection
           path: |
-            artifact/LAC-latest.xapk
-            artifact/*.obb
             artifact/report/
             artifact/text-assets/
           if-no-files-found: error
