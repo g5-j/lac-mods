@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: lac-latest-inspection
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   fetch-inspect:
