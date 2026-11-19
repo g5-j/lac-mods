@@ -87,12 +87,21 @@ jobs:
             -o work/jadx.zip
           unzip -q work/jadx.zip -d work/jadx
           mkdir -p work/java
-          work/jadx/bin/jadx --no-res --show-bad-code -d work/java artifact/LAC-1.9.8-original.apk
+          set +e
+          work/jadx/bin/jadx --no-res --show-bad-code --threads-count 2 -d work/java artifact/LAC-1.9.8-original.apk > artifact/reports/jadx.log 2>&1
+          jadx_status=$?
+          set -e
           {
+            echo "JADX exit status: $jadx_status (non-zero can mean partial decompilation)"
+            echo
             echo "## Unity activity / native loading / rendering entry points"
-            grep -RInE -m 1500 'UnityPlayerActivity|UnityPlayer|System\.loadLibrary|onCreate\(|onResume\(|onPause\(|eglSwapBuffers|GLSurfaceView|SurfaceView' work/java/sources || true
+            grep -RInE -m 1500 'UnityPlayerActivity|UnityPlayer|System\\.loadLibrary|onCreate\\(|onResume\\(|onPause\\(|eglSwapBuffers|GLSurfaceView|SurfaceView' work/java/sources || true
+            echo
+            echo "## Decompiled source file count"
+            find work/java/sources -type f -name '*.java' 2>/dev/null | wc -l
           } > artifact/reports/java-entrypoints.txt
           test -s artifact/reports/java-entrypoints.txt
+          test -d work/java/sources
 
       - name: Upload APK-only integration inputs
         uses: actions/upload-artifact@v4
