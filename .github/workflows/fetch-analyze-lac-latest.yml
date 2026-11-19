@@ -119,7 +119,7 @@ jobs:
                               if isinstance(payload,str): raw=payload.encode("utf-8","replace")
                               else: raw=bytes(payload)
                               decoded=raw.decode("utf-8","replace")
-                              ui_re=re.compile(r"(?i)\b(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)\\b|[ء-ي]")
+                              ui_re=re.compile(r"(?i)\b(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)\\b|إعدادات|اللغة|المحادثة|الرسائل|الرسوميات|الصوت|التحكم|حفظ|تحميل|الحساب|الشبكة|الاتصال|الخريطة|مساعدة|تعليمات|السيرفر|العرض|الجودة|الموسيقى|زر|إدخال")
                               excluded_re=re.compile(r"(?i)\b(weapon|weapons|gun|guns|firearm|ammo|ammunition|rifle|pistol|shotgun|sniper|grenade|knife|sword|bullet|launcher|rocket|crossbow|bow|melee|explosive)\\b")
                               if excluded_re.search(str(name)) or excluded_re.search(str(p)): continue
                               if not ui_re.search(str(name)): continue
@@ -143,7 +143,7 @@ jobs:
             {
               strings -a -n 4 "$f" 2>/dev/null | sed "s#^#ASCII $f: #" || true
               strings -el -n 4 "$f" 2>/dev/null | sed "s#^#UTF16LE $f: #" || true
-            } | grep -Eai '(^|[^[:alpha:]])(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)([^[:alpha:]]|$)|[ء-ي]' \
+            } | grep -Eai '(^|[^[:alpha:]])(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)([^[:alpha:]]|$)|إعدادات|اللغة|المحادثة|الرسائل|الرسوميات|الصوت|التحكم|حفظ|تحميل|الحساب|الشبكة|الاتصال|الخريطة|مساعدة|تعليمات|السيرفر|العرض|الجودة|الموسيقى|زر|إدخال' \
               | grep -Eiv '(weapon|weapons|gun|guns|firearm|ammo|ammunition|rifle|pistol|shotgun|sniper|grenade|knife|sword|bullet|launcher|rocket|crossbow|melee|explosive)' \
               >> artifact/report/ui-localization-hits.txt || true
           done < <(find work/unpacked work/obb-unpacked -type f -print0)
