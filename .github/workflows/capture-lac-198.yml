@@ -39,7 +39,7 @@ jobs:
           mkdir -p input/unpacked
           unzip -q input/lac-latest.xapk -d input/unpacked
           python - <<'PY'
-          import json, pathlib, shutil, sys
+          import json, pathlib, shutil
           root=pathlib.Path("input/unpacked")
           manifests=list(root.rglob("manifest.json"))
           if not manifests:
@@ -82,14 +82,31 @@ jobs:
             find input/apk -type f \( -name 'global-metadata.dat' -o -name 'libunity.so' -o -name 'libil2cpp.so' \) -printf '%P\t%s bytes\n' | sort
           } > package/metadata/native-inventory.txt
           test -s package/metadata/native-inventory.txt
+          sha256sum package/LAC-1.9.8.apk package/LAC-1.9.8.obb > package/metadata/package-sha256.txt
 
-      - name: Upload exact APK, OBB and native inputs
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LAC-1.9.8-Development-Inputs-v62
+          name: LAC-1.9.8-APK-v62
+          path: package/LAC-1.9.8.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload OBB
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAC-1.9.8-OBB-v62
+          path: package/LAC-1.9.8.obb
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload native libraries and metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAC-1.9.8-Native-Analysis-v62
           path: |
-            package/LAC-1.9.8.apk
-            package/LAC-1.9.8.obb
             package/native/
             package/metadata/
           if-no-files-found: error
