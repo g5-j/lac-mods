@@ -1,4 +1,5 @@
 name: Prepare LAC 1.9.8 APK-only ImGui integration
+# Output is a single APK; the source XAPK is only an extraction container.
 
 on:
   workflow_dispatch:
