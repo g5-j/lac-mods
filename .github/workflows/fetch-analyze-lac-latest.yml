@@ -97,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > work/extract_unity_text.py <<'PY'
-          import pathlib, json, traceback
+          import pathlib, json, traceback, re
           import UnityPy
           roots=[pathlib.Path("work/unpacked"),pathlib.Path("work/obb-unpacked")]
           rows=[]
@@ -118,10 +118,15 @@ jobs:
                               payload=getattr(data,"m_Script",b"")
                               if isinstance(payload,str): raw=payload.encode("utf-8","replace")
                               else: raw=bytes(payload)
+                              decoded=raw.decode("utf-8","replace")
+                              ui_re=re.compile(r"(?i)\\b(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)\\b|[ء-ي]")
+                              excluded_re=re.compile(r"(?i)\\b(weapon|weapons|gun|guns|firearm|ammo|ammunition|rifle|pistol|shotgun|sniper|grenade|knife|sword|bullet|launcher|rocket|crossbow|bow|melee|explosive)\\b")
+                              safe_lines=[line for line in decoded.splitlines() if ui_re.search(line) and not excluded_re.search(line)]
+                              if not safe_lines: continue
                               safe="".join(c if c.isalnum() or c in "._-" else "_" for c in str(name))[:100]
                               dest=out/f"{p.name}_{safe}_{i}.txt"
-                              dest.write_bytes(raw)
-                              rows.append({"source":str(p),"type":typ,"name":str(name),"output":str(dest),"bytes":len(raw)})
+                              dest.write_text("\\n".join(safe_lines)+"\\n",encoding="utf-8")
+                              rows.append({"source":str(p),"type":typ,"name":str(name),"output":str(dest),"matched_ui_lines":len(safe_lines)})
                           else:
                               rows.append({"source":str(p),"type":typ,"name":str(name),"note":"MonoBehaviour object detected; serialized fields require type-tree decoding"})
                   except Exception:
@@ -130,13 +135,16 @@ jobs:
           print(f"Indexed {len(rows)} Unity TextAsset/MonoBehaviour objects")
           PY
           python work/extract_unity_text.py
-          : > artifact/report/readable-string-hits.txt
+          : > artifact/report/ui-localization-hits.txt
           while IFS= read -r -d '' f; do
             case "$f" in *.xapk) continue;; esac
-            strings -a -n 4 "$f" 2>/dev/null | sed "s#^#ASCII $f: #" >> artifact/report/readable-string-hits.txt || true
-            strings -el -n 4 "$f" 2>/dev/null | sed "s#^#UTF16LE $f: #" >> artifact/report/readable-string-hits.txt || true
+            {
+              strings -a -n 4 "$f" 2>/dev/null | sed "s#^#ASCII $f: #" || true
+              strings -el -n 4 "$f" 2>/dev/null | sed "s#^#UTF16LE $f: #" || true
+            } | grep -Eai '(^|[^[:alpha:]])(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input)([^[:alpha:]]|$)|[ء-ي]' \
+              | grep -Eiv '(weapon|weapons|gun|guns|firearm|ammo|ammunition|rifle|pistol|shotgun|sniper|grenade|knife|sword|bullet|launcher|rocket|crossbow|melee|explosive)' \
+              >> artifact/report/ui-localization-hits.txt || true
           done < <(find work/unpacked work/obb-unpacked -type f -print0)
-          grep -Eai '(^|[^[:alpha:]])(chat|message|text|language|local|arabic|english|command|hud|editor|menu|settings|player|vehicle|map)([^[:alpha:]]|$)|[ء-ي]' artifact/report/readable-string-hits.txt > artifact/report/likely-text-and-localization-hits.txt || true
           find artifact/text-assets -type f -printf '%P\t%s bytes\n' | sort > artifact/report/extracted-textasset-list.txt
 
       - name: Build inspection summary
@@ -160,7 +168,7 @@ jobs:
             cat artifact/report/extracted-textasset-list.txt
             echo
             echo "## Likely localization/text matches"
-            echo "See likely-text-and-localization-hits.txt"
+            echo "See ui-localization-hits.txt (weapon-related terms excluded)."
           } > artifact/report/README.md
 
       - name: Upload package and analysis artifacts
