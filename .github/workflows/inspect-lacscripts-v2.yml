@@ -1,0 +1,102 @@
+name: Inspect LAC script plugin packages
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/inspect-lacscripts-v2.yml"
+      - "admin-give.lacscripts"
+      - "phone_messenger.lacscripts"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lac-script-inspection
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Safely extract plugin archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, zipfile
+          jobs = {
+              "admin-give.lacscripts": pathlib.Path("artifact/admin_give"),
+              "phone_messenger.lacscripts": pathlib.Path("artifact/phone_messenger"),
+          }
+          for archive, dest in jobs.items():
+              p=pathlib.Path(archive)
+              if not p.is_file():
+                  raise SystemExit(f"Missing plugin archive: {archive}")
+              dest.mkdir(parents=True, exist_ok=True)
+              with zipfile.ZipFile(p) as z:
+                  for info in z.infolist():
+                      name=pathlib.PurePosixPath(info.filename)
+                      if name.is_absolute() or ".." in name.parts:
+                          raise SystemExit(f"Unsafe archive path in {archive}: {info.filename}")
+                  z.extractall(dest)
+              manifest=dest/"manifest.json"
+              if not manifest.is_file():
+                  raise SystemExit(f"{archive}: manifest.json missing")
+              print(f"{archive}: extracted {len(list(dest.rglob('*')))} entries")
+          PY
+          mkdir -p artifact/reports
+          sha256sum admin-give.lacscripts phone_messenger.lacscripts > artifact/reports/source-sha256.txt
+          find artifact/admin_give artifact/phone_messenger -type f -printf '%p\t%s bytes\n' | sort > artifact/reports/plugin-files.txt
+          python3 - <<'PY'
+          import json, pathlib
+          out=[]
+          for label, root in [("admin-give","artifact/admin_give"),("phone-messenger","artifact/phone_messenger")]:
+              p=pathlib.Path(root)
+              m=json.loads((p/"manifest.json").read_text(errors="replace"))
+              out.append({"plugin":label,"manifest":m,"files":[str(x.relative_to(p)) for x in p.rglob("*") if x.is_file()]})
+          pathlib.Path("artifact/reports/plugin-manifests.json").write_text(json.dumps(out,indent=2,ensure_ascii=False))
+          PY
+
+      - name: Download JADX
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            'https://github.com/skylot/jadx/releases/download/v1.5.6/jadx-1.5.6.zip' \
+            -o artifact/jadx.zip
+          mkdir -p work/jadx
+          unzip -q artifact/jadx.zip -d work/jadx
+          test -x work/jadx/bin/jadx
+
+      - name: Decompile plugin bytecode
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact/admin_give/java artifact/phone_messenger/java
+          for plugin in admin_give phone_messenger; do
+            dex="artifact/$plugin/classes.dex"
+            if [ -s "$dex" ]; then
+              work/jadx/bin/jadx --no-res --show-bad-code -d "artifact/$plugin/java" "$dex"
+            fi
+          done
+          {
+            echo "## Plugin manifests"
+            cat artifact/reports/plugin-manifests.json
+            echo
+            echo "## Decompiled classes and likely entry points"
+            grep -RInE -m 1000 'class .*Activity|class .*Service|onCreate|onStartCommand|native |System\.loadLibrary|ImGui|overlay|draw|menu|admin|permission' artifact/admin_give/java artifact/phone_messenger/java || true
+          } > artifact/reports/code-index.txt
+          test -s artifact/reports/code-index.txt
+
+      - name: Upload plugin source inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAC-Script-Plugin-Inspection
+          path: artifact/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
