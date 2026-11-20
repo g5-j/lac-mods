@@ -1,1 +1,0 @@
-work/LAC-latest.xapk: Zip archive data, at least v2.0 to extract, compression method=store
