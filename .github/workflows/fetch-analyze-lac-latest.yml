@@ -1,4 +1,5 @@
 name: Fetch and inspect latest LAC XAPK
+run-name: UI and localization extraction
 
 on:
   workflow_dispatch:
