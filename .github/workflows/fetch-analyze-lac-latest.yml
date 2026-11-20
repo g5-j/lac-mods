@@ -1,5 +1,5 @@
-name: Fetch and inspect latest LAC XAPK
-run-name: UI and localization extraction
+name: Extract LAC native libraries and metadata
+run-name: Extract libil2cpp and global-metadata
 
 on:
   workflow_dispatch:
@@ -8,252 +8,92 @@ on:
       - ".github/workflows/fetch-analyze-lac-latest.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: lac-latest-inspection
+  group: lac-xapk-binary-extraction
   cancel-in-progress: true
 
 jobs:
-  fetch-inspect:
+  extract:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Prepare tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y unzip p7zip-full file binutils
-          python -m pip install --upgrade pip
-          python -m pip install UnityPy
-          mkdir -p work/unpacked work/obb-unpacked work/apk-unpacked artifact/report artifact/text-assets
-
-      - name: Download latest XAPK from APKPure
+      - name: Download the original XAPK
         shell: bash
         run: |
           set -euo pipefail
           URL='https://d.apkpure.com/b/XAPK/com.MA.LAC?version=latest'
+          mkdir -p work/xapk work/apks artifact/extracted/native artifact/extracted/metadata
           curl --fail --location --retry 5 --retry-all-errors \
             --connect-timeout 30 --max-time 1800 \
             --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36' \
             "$URL" --output work/LAC-latest.xapk
           test -s work/LAC-latest.xapk
-          file work/LAC-latest.xapk | tee artifact/report/download-file-type.txt
-          sha256sum work/LAC-latest.xapk | tee artifact/report/xapk-sha256.txt
           unzip -t work/LAC-latest.xapk
+          unzip -q work/LAC-latest.xapk -d work/xapk
 
-      - name: Extract XAPK, APK and OBB
+      - name: Extract the two requested files from APK contents
         shell: bash
         run: |
           set -euo pipefail
-          unzip -q work/LAC-latest.xapk -d work/unpacked
-          find work/unpacked -type f -printf '%P\t%s bytes\n' | sort > artifact/report/xapk-file-list.txt
-          python - <<'PY'
-          import json, pathlib
-          root=pathlib.Path("work/unpacked")
-          manifests=list(root.rglob("manifest.json"))
-          out={"package":"com.MA.LAC","manifest_found":bool(manifests)}
-          if manifests:
-              try:
-                  data=json.loads(manifests[0].read_text(errors="replace"))
-                  out["xapk_manifest"]=data
-                  out["version_code"]=data.get("version_code") or data.get("versionCode")
-                  out["version_name"]=data.get("version_name") or data.get("versionName")
-              except Exception as e:
-                  out["manifest_parse_error"]=str(e)
-          apks=list(root.rglob("*.apk"))
-          obbs=list(root.rglob("*.obb"))
-          out["apk_count"]=len(apks)
-          out["obb_count"]=len(obbs)
-          pathlib.Path("artifact/report/package-summary.json").write_text(json.dumps(out,ensure_ascii=False,indent=2))
-          for n,apk in enumerate(apks):
-              dest=pathlib.Path("work/apk-unpacked")/str(n)
-              dest.mkdir(parents=True,exist_ok=True)
-              import zipfile
-              if zipfile.is_zipfile(apk):
-                  with zipfile.ZipFile(apk) as z: z.extractall(dest)
-          for n,obb in enumerate(obbs):
-              dest=pathlib.Path("work/obb-unpacked")/str(n)
-              dest.mkdir(parents=True,exist_ok=True)
-              import zipfile
-              if zipfile.is_zipfile(obb):
-                  with zipfile.ZipFile(obb) as z: z.extractall(dest)
-              else:
-                  (dest/"obb.bin").write_bytes(obb.read_bytes())
-          print(json.dumps(out,ensure_ascii=False,indent=2))
-          PY
 
-      - name: Inventory OBB and discover Unity containers
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import pathlib, collections, json
-          roots=[pathlib.Path("work/obb-unpacked"),pathlib.Path("work/apk-unpacked")]
-          counts=collections.Counter()
-          candidates=[]
-          for root in roots:
-              for p in root.rglob("*"):
-                  if not p.is_file(): continue
-                  ext=p.suffix.lower() or "[no extension]"
-                  counts[ext]+=1
-                  if ext in {".assets",".bundle",".unity3d",".resource",".resS",".assetbundle",".dat"} or ext=="[no extension]":
-                      candidates.append({"file":str(p),"bytes":p.stat().st_size,"extension":ext})
-          pathlib.Path("artifact/report/obb-file-list.txt").write_text(
-              "\n".join(f"{k}: {v} files" for k,v in sorted(counts.items()))+"\n",encoding="utf-8")
-          pathlib.Path("work/unity-candidates.json").write_text(json.dumps(candidates,indent=2))
-          print(f"Found {len(candidates)} candidate Unity/data files")
-          PY
+          mapfile -d '' APK_FILES < <(find work/xapk -type f -iname '*.apk' -print0)
+          if [ "${#APK_FILES[@]}" -eq 0 ]; then
+            echo "No APK files were found inside the XAPK." >&2
+            exit 1
+          fi
 
-      - name: Extract UI and localization strings from Unity assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > work/extract_ui.py <<'PY'
-          import pathlib, json, re, collections, traceback
-          import UnityPy
+          for index in "${!APK_FILES[@]}"; do
+            apk="${APK_FILES[$index]}"
+            destination="work/apks/$index"
+            mkdir -p "$destination"
+            unzip -q "$apk" -d "$destination"
+          done
 
-          roots=[pathlib.Path("work/unpacked"),pathlib.Path("work/obb-unpacked"),pathlib.Path("work/apk-unpacked")]
-          out=pathlib.Path("artifact/text-assets")
-          out.mkdir(parents=True,exist_ok=True)
-          ui_re=re.compile(
-              r"\b(menu|settings|language|localization|translation|chat|message|hud|editor|graphics|audio|controls|loading|save|login|account|network|connection|multiplayer|map|help|tutorial|server|display|quality|sound|music|button|input|nickname|username|password|cancel|confirm|back|continue|play|join|create|search|report|privacy|support|exit|resume|pause|sensitivity|resolution|shadow|texture|fps|cloud|weather)\b"
-              r"|إعدادات|اللغة|المحادثة|الرسائل|الرسوميات|الصوت|التحكم|حفظ|تحميل|الحساب|الشبكة|الاتصال|الخريطة|مساعدة|تعليمات|السيرفر|العرض|الجودة|الموسيقى|زر|إدخال|إلغاء|تأكيد|رجوع|متابعة|تشغيل|انضمام|إنشاء|بحث|خروج|إيقاف|استئناف|الدقة|الظل|الطقس",
-              re.I
-          )
-          seen=set()
-          rows=[]
-          type_counts=collections.Counter()
-          scanned=0
-          for root in roots:
-              if not root.exists(): continue
-              for p in root.rglob("*"):
-                  if not p.is_file() or p.stat().st_size==0: continue
-                  if p.stat().st_size > 1024*1024*1024: continue
-                  scanned+=1
-                  try:
-                      env=UnityPy.load(str(p))
-                      for i,obj in enumerate(env.objects):
-                          typ=getattr(getattr(obj,"type",None),"name","")
-                          type_counts[typ]+=1
-                          if typ!="TextAsset": continue
-                          try:
-                              data=obj.read()
-                              payload=getattr(data,"m_Script",b"")
-                              raw=payload.encode("utf-8","replace") if isinstance(payload,str) else bytes(payload)
-                              decoded=raw.decode("utf-8","replace")
-                          except Exception:
-                              continue
-                          # TextAssets may be JSON/CSV or one-line text; inspect values as well as lines.
-                          candidates=list(decoded.splitlines())
-                          candidates += re.findall(r'"((?:\\.|[^"\\]){2,240})"',decoded)
-                          candidates += re.findall(r"'((?:\\.|[^'\\]){2,240})'",decoded)
-                          matched=[]
-                          for line in candidates:
-                              line=line.strip().replace("\\n"," ").replace("\\t"," ")
-                              if not (2 <= len(line) <= 240): continue
-                              if not ui_re.search(line): continue
-                              if not re.search(r"[A-Za-z\u0600-\u06FF]",line): continue
-                              normalized=re.sub(r"\s+"," ",line)
-                              key=normalized.casefold()
-                              if key not in seen:
-                                  seen.add(key); matched.append(normalized)
-                          if matched:
-                              name=str(getattr(data,"m_Name","") or f"TextAsset_{i}")
-                              safe=re.sub(r"[^A-Za-z0-9_.-]+","_",name)[:70] or f"TextAsset_{i}"
-                              dest=out/f"{p.name}_{safe}_{i}.txt"
-                              dest.write_text("\n".join(matched)+"\n",encoding="utf-8")
-                              rows.append({"asset":p.name,"textasset":name,"matched_strings":len(matched),"output":str(dest)})
-                  except Exception:
-                      continue
-          pathlib.Path("artifact/report/unity-object-index.json").write_text(json.dumps({
-              "files_scanned":scanned,"object_types":dict(type_counts),"textassets_with_ui_strings":len(rows),"assets":rows
-          },ensure_ascii=False,indent=2))
-          # Fallback: scan readable strings in Unity/data files only and retain concise UI-like labels.
-          raw_hits=set()
-          try:
-              import subprocess
-              for root in roots:
-                  if not root.exists(): continue
-                  for p in root.rglob("*"):
-                      if not p.is_file() or p.stat().st_size==0 or p.stat().st_size>1024*1024*1024: continue
-                      if p.suffix.lower() not in {".assets",".bundle",".unity3d",".resource",".ress",".assetbundle",".dat"} and p.name!="obb.bin":
-                          continue
-                      for mode in (["-a"],["-el"]):
-                          result=subprocess.run(["strings",*mode,"-n","4",str(p)],capture_output=True,text=True,errors="replace")
-                          for value in result.stdout.splitlines():
-                              value=re.sub(r"\s+"," ",value).strip()
-                              if 3<=len(value)<=160 and ui_re.search(value) and re.search(r"[A-Za-z\u0600-\u06FF]",value):
-                                  if re.fullmatch(r"[\w .,:!?()/+-]+",value,re.UNICODE):
-                                      raw_hits.add(value)
-          except Exception:
-              pass
-          pathlib.Path("artifact/report/ui-localization-hits.txt").write_text(
-              "\n".join(sorted(raw_hits,key=str.casefold))+"\n",encoding="utf-8")
-          pathlib.Path("artifact/report/extracted-textasset-list.txt").write_text(
-              "\n".join(f"{r['output']}\t{r['matched_strings']} strings" for r in rows)+"\n",encoding="utf-8")
-          print(f"Scanned {scanned} files; {len(rows)} TextAssets yielded UI strings; {len(raw_hits)} fallback UI strings")
-          PY
-          python work/extract_ui.py
-          test -s artifact/report/ui-localization-hits.txt || echo "No UI strings matched the current label dictionary." > artifact/report/ui-localization-hits.txt
+          mapfile -d '' LIB_FILES < <(find work/apks -type f -name 'libil2cpp.so' -print0)
+          mapfile -d '' META_FILES < <(find work/apks -type f -name 'global-metadata.dat' -print0)
 
-      - name: Build inspection summary
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            echo "# LAC latest package UI text extraction"
-            echo
-            echo "- Package: com.MA.LAC"
-            echo "- Source: APKPure latest XAPK endpoint"
-            echo "- Inspected at UTC: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-            echo
-            echo "## Package files"
-            cat artifact/report/xapk-file-list.txt
-            echo
-            echo "## Extracted data inventory"
-            cat artifact/report/obb-file-list.txt
-            echo
-            echo "## Unity TextAssets with UI strings"
-            cat artifact/report/extracted-textasset-list.txt
-            echo
-            echo "## UI/localization string matches"
-            wc -l artifact/report/ui-localization-hits.txt
-            echo
-            echo "Full filtered strings: ui-localization-hits.txt"
-          } > artifact/report/README.md
+          if [ "${#LIB_FILES[@]}" -eq 0 ]; then
+            echo "libil2cpp.so was not found in the APK files." >&2
+            exit 1
+          fi
+          if [ "${#META_FILES[@]}" -eq 0 ]; then
+            echo "global-metadata.dat was not found in the APK files." >&2
+            exit 1
+          fi
 
-      - name: Upload filtered text reports
+          # Keep each ABI-specific native library and the metadata file's original APK-relative path.
+          for source in "${LIB_FILES[@]}"; do
+            relative="${source#work/apks/}"
+            abi="$(basename "$(dirname "$source")")"
+            mkdir -p "artifact/extracted/native/$abi"
+            cp "$source" "artifact/extracted/native/$abi/libil2cpp.so"
+            printf '%s\n' "$relative" >> artifact/extracted/native/source-paths.txt
+          done
+
+          # Usually there is one metadata file. Preserve distinct copies if split APKs contain more than one.
+          for index in "${!META_FILES[@]}"; do
+            source="${META_FILES[$index]}"
+            if [ "$index" -eq 0 ]; then
+              cp "$source" artifact/extracted/metadata/global-metadata.dat
+            else
+              cp "$source" "artifact/extracted/metadata/global-metadata-$index.dat"
+            fi
+            printf '%s\n' "${source#work/apks/}" >> artifact/extracted/metadata/source-paths.txt
+          done
+
+          echo "Extracted native libraries:"
+          find artifact/extracted/native -type f -printf '%P (%s bytes)\n' | sort
+          echo "Extracted metadata:"
+          find artifact/extracted/metadata -type f -printf '%P (%s bytes)\n' | sort
+          test -s artifact/extracted/metadata/global-metadata.dat
+
+      - name: Upload the extracted files
         uses: actions/upload-artifact@v4
         with:
-          name: LAC-1.9.8-UI-Text-Extraction
-          path: |
-            artifact/report/
-            artifact/text-assets/
+          name: LAC-libil2cpp-and-global-metadata
+          path: artifact/extracted/
           if-no-files-found: error
-          compression-level: 6
+          compression-level: 0
           retention-days: 14
-
-      - name: Commit extracted text reports
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p analysis/latest
-          cp -a artifact/report/. analysis/latest/
-          mkdir -p analysis/latest/text-assets
-          cp -a artifact/text-assets/. analysis/latest/text-assets/ 2>/dev/null || true
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add analysis/latest
-          if git diff --cached --quiet; then
-            echo "No analysis changes to commit."
-          else
-            git commit -m "Extract LAC latest UI and localization strings"
-            git push
-          fi
